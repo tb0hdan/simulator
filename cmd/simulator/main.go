@@ -18,7 +18,8 @@ const (
 
 func main() {
 	var (
-		listenAddr = flag.String("listen", "localhost:8080", "server listen address")
+		listenAddr  = flag.String("listen", "localhost:8080", "server listen address")
+		gracePeriod = flag.Duration("grace-period", 3*time.Second, "grace period for server shutdown")
 	)
 	flag.Parse()
 
@@ -27,7 +28,7 @@ func main() {
 
 	srv := server.New()
 	go func() {
-		if err := srv.Start(*listenAddr); err != nil {
+		if err := srv.Start(*listenAddr, *gracePeriod); err != nil {
 			log.Println("Error starting server:", err)
 			stop()
 		}

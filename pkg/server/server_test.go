@@ -16,7 +16,7 @@ import (
 func TestMain(m *testing.M) {
 	go func() {
 		srv := New()
-		err := srv.Start(":8080")
+		err := srv.Start(":8080", 3*time.Second)
 		if err != nil {
 			fmt.Println("Failed to start server:", err)
 			os.Exit(1)

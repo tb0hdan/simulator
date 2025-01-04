@@ -52,7 +52,7 @@ type conn struct {
 	server *Server
 
 	// cancelCtx cancels the connection-level context.
-	cancelCtx context.CancelFunc
+	// cancelCtx context.CancelFunc
 
 	// rwc is the underlying network connection.
 	// This is never wrapped by other types and is the value given out
@@ -92,12 +92,32 @@ func (c *conn) handleConnection() {
 	scanner := bufio.NewScanner(c.rwc)
 	for scanner.Scan() {
 		request := scanner.Text()
-		response := c.handleRequest(request)
+		response := c.handleRequestWrapped(request)
 		fmt.Fprintf(c.rwc, "%s\n", response)
 	}
 
 	if err := scanner.Err(); err != nil {
 		fmt.Println("Error reading from connection:", err)
+	}
+}
+
+func (c *conn) handleRequestWrapped(request string) string {
+	if !c.server.inShutdown.Load() {
+		return c.handleRequest(request)
+	}
+	handleCh := make(chan string)
+
+	go func() {
+		handleCh <- c.handleRequest(request)
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), c.server.gracePeriod)
+	defer cancel()
+	select {
+	case <-ctx.Done():
+		return "RESPONSE|REJECTED|Cancelled"
+	case result := <-handleCh:
+		return result
 	}
 }
 

@@ -20,6 +20,7 @@ type Server struct {
 	inShutdown    atomic.Bool
 	listeners     map[*net.Listener]struct{}
 	listenerGroup sync.WaitGroup
+	gracePeriod   time.Duration
 }
 
 func (s *Server) closeListenersLocked() error {
@@ -114,12 +115,15 @@ func (s *Server) trackConn(c *conn, add bool) {
 	}
 }
 
-func (s *Server) Start(bindAddr string) error {
+func (s *Server) Start(bindAddr string, gracePeriod time.Duration) error {
 	listener, err := net.Listen("tcp", bindAddr)
 	if err != nil {
 		return err
 	}
 	defer listener.Close()
+
+	// set grace period
+	s.gracePeriod = gracePeriod
 
 	for {
 		conn, err := listener.Accept()
