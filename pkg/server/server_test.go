@@ -1,4 +1,4 @@
-package main_test
+package server
 
 import (
 	"bufio"
@@ -11,12 +11,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/tb0hdan/simulator/pkg/server"
 )
 
 func TestMain(m *testing.M) {
 	go func() {
-		srv := server.New()
+		srv := New()
 		err := srv.Start(":8080")
 		if err != nil {
 			fmt.Println("Failed to start server:", err)
