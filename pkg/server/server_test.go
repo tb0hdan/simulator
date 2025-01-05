@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -11,12 +12,18 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 )
 
-func TestMain(m *testing.M) {
+type SimulatorTestSuite struct {
+	suite.Suite
+	srv *Server
+}
+
+func (s *SimulatorTestSuite) SetupSuite() {
+	s.srv = New()
 	go func() {
-		srv := New()
-		err := srv.Start(":8080", 3*time.Second)
+		err := s.srv.Start(":8080", 3*time.Second)
 		if err != nil {
 			fmt.Println("Failed to start server:", err)
 			os.Exit(1)
@@ -25,13 +32,15 @@ func TestMain(m *testing.M) {
 
 	// wait of the server to be ready
 	time.Sleep(time.Second)
-
-	code := m.Run()
-
-	os.Exit(code)
 }
 
-func TestSchemeSimulator(t *testing.T) {
+func (s *SimulatorTestSuite) TearDownSuite() {
+	// wait for the server to shutdown
+	time.Sleep(time.Second)
+	s.srv.Shutdown(context.Background())
+}
+
+func (s *SimulatorTestSuite) TestSchemeSimulator() {
 	tests := []struct {
 		name           string
 		input          string
@@ -69,7 +78,7 @@ func TestSchemeSimulator(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		s.T().Run(tt.name, func(t *testing.T) {
 			conn, err := net.Dial("tcp", ":8080")
 			require.NoError(t, err, "Failed to connect to server")
 			defer conn.Close()
@@ -96,4 +105,8 @@ func TestSchemeSimulator(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSimulatorTestSuite(t *testing.T) {
+	suite.Run(t, new(SimulatorTestSuite))
 }
