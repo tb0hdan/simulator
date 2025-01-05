@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"fmt"
+	"log"
 	"math/rand"
 	"net"
 	"sync"
@@ -21,6 +21,7 @@ type Server struct {
 	listeners     map[*net.Listener]struct{}
 	listenerGroup sync.WaitGroup
 	gracePeriod   time.Duration
+	logger        *log.Logger
 }
 
 func (s *Server) closeListenersLocked() error {
@@ -37,22 +38,22 @@ func (s *Server) closeIdleConns() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	quiescent := true
-	for c := range s.activeConn {
-		st, unixSec := c.getState()
+	for activeConnection := range s.activeConn {
+		state, unixSec := activeConnection.getState()
 		// Issue 22682: treat StateNew connections as if
 		// they're idle if we haven't read the first request's
 		// header in over 5 seconds.
-		if st == StateNew && unixSec < time.Now().Unix()-5 {
-			st = StateIdle
+		if state == StateNew && unixSec < time.Now().Unix()-5 {
+			state = StateIdle
 		}
-		if st != StateIdle || unixSec == 0 {
+		if state != StateIdle || unixSec == 0 {
 			// Assume unixSec == 0 means it's a very new
 			// connection, without state set yet.
 			quiescent = false
 			continue
 		}
-		c.rwc.Close()
-		delete(s.activeConn, c)
+		activeConnection.rwc.Close()
+		delete(s.activeConn, activeConnection)
 	}
 	return quiescent
 }
@@ -69,7 +70,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	pollIntervalBase := time.Millisecond
 	nextPollInterval := func() time.Duration {
 		// Add 10% jitter.
-		interval := pollIntervalBase + time.Duration(rand.Intn(int(pollIntervalBase/10)))
+		interval := pollIntervalBase + time.Duration(rand.Intn(int(pollIntervalBase/10))) //nolint:gosec,mnd
 		// Double and clamp for next time.
 		pollIntervalBase *= 2
 		if pollIntervalBase > shutdownPollIntervalMax {
@@ -94,15 +95,14 @@ func (s *Server) Shutdown(ctx context.Context) error {
 }
 
 func (s *Server) newConn(rwc net.Conn) *conn {
-	c := &conn{
-		server: s,
-		rwc:    rwc,
+	return &conn{
+		server:   s,
+		rwc:      rwc,
+		curState: atomic.Uint64{},
 	}
-
-	return c
 }
 
-func (s *Server) trackListener(ln *net.Listener, add bool) bool {
+func (s *Server) trackListener(listener *net.Listener, add bool) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.listeners == nil {
@@ -112,25 +112,25 @@ func (s *Server) trackListener(ln *net.Listener, add bool) bool {
 		if s.shuttingDown() {
 			return false
 		}
-		s.listeners[ln] = struct{}{}
+		s.listeners[listener] = struct{}{}
 		s.listenerGroup.Add(1)
 	} else {
-		delete(s.listeners, ln)
+		delete(s.listeners, listener)
 		s.listenerGroup.Done()
 	}
 	return true
 }
 
-func (s *Server) trackConn(c *conn, add bool) {
+func (s *Server) trackConn(connection *conn, add bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.activeConn == nil {
 		s.activeConn = make(map[*conn]struct{})
 	}
 	if add {
-		s.activeConn[c] = struct{}{}
+		s.activeConn[connection] = struct{}{}
 	} else {
-		delete(s.activeConn, c)
+		delete(s.activeConn, connection)
 	}
 }
 
@@ -154,20 +154,29 @@ func (s *Server) Start(bindAddr string, gracePeriod time.Duration) error {
 	defer s.trackListener(&listener, false)
 
 	for {
-		rw, err := listener.Accept()
+		connection, err := listener.Accept()
 		if err != nil {
 			if s.shuttingDown() {
 				return ErrServerClosed
 			}
-			fmt.Println("Error accepting connection:", err)
+			s.logger.Printf("Error accepting connection: %v", err)
 			continue
 		}
-		c := s.newConn(rw)
+		c := s.newConn(connection)
 		c.setState(StateNew)
 		go c.handleConnection()
 	}
 }
 
-func New() *Server {
-	return &Server{}
+func New(logger *log.Logger) *Server {
+	return &Server{
+		mu:            sync.Mutex{},
+		activeConn:    make(map[*conn]struct{}),
+		inShutdown:    atomic.Bool{},
+		listeners:     make(map[*net.Listener]struct{}),
+		listenerGroup: sync.WaitGroup{},
+		// This will be overridden by the Start method
+		gracePeriod: 0,
+		logger:      logger,
+	}
 }

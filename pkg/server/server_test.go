@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"strings"
@@ -23,7 +24,7 @@ type SimulatorTestSuite struct {
 }
 
 func (s *SimulatorTestSuite) SetupSuite() {
-	s.srv = New()
+	s.srv = New(log.New(os.Stdout, "", log.LstdFlags))
 	go func() {
 		if err := s.srv.Start(ServerAddr, 3*time.Second); !errors.Is(err, ErrServerClosed) {
 			fmt.Println("Failed to start server:", err)

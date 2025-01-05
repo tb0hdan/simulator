@@ -7,7 +7,6 @@ import (
 	"net"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -20,19 +19,6 @@ const (
 	// state and then transition to either StateActive or
 	// StateClosed.
 	StateNew ConnState = iota
-
-	// StateActive represents a connection that has read 1 or more
-	// bytes of a request. The Server.ConnState hook for
-	// StateActive fires before the request has entered a handler
-	// and doesn't fire again until the request has been
-	// handled. After the request is handled, the state
-	// transitions to StateClosed, StateHijacked, or StateIdle.
-	// For HTTP/2, StateActive fires on the transition from zero
-	// to one active request, and only transitions away once all
-	// active requests are complete. That means that ConnState
-	// cannot be used to do per-request work; ConnState only notes
-	// the overall state of the connection.
-	StateActive
 
 	// StateIdle represents a connection that has finished
 	// handling a request and is in the keep-alive state, waiting
@@ -51,9 +37,6 @@ type conn struct {
 	// Immutable; never nil.
 	server *Server
 
-	// cancelCtx cancels the connection-level context.
-	// cancelCtx context.CancelFunc
-
 	// rwc is the underlying network connection.
 	// This is never wrapped by other types and is the value given out
 	// to CloseNotifier callers. It is usually of type *net.TCPConn or
@@ -61,18 +44,16 @@ type conn struct {
 	rwc net.Conn
 
 	curState atomic.Uint64 // packed (unixtime<<8|uint8(ConnState))
-
-	mu sync.Mutex
 }
 
-func (c *conn) getState() (state ConnState, unixSec int64) {
+func (c *conn) getState() (ConnState, int64) {
 	packedState := c.curState.Load()
-	return ConnState(packedState & 0xff), int64(packedState >> 8)
+	return ConnState(packedState & 0xff), int64(packedState >> 8) //nolint:gosec,mnd
 }
 
 func (c *conn) setState(state ConnState) {
 	srv := c.server
-	switch state {
+	switch state { //nolint:exhaustive
 	case StateNew:
 		srv.trackConn(c, true)
 	case StateClosed:
@@ -81,9 +62,8 @@ func (c *conn) setState(state ConnState) {
 	if state > 0xff || state < 0 {
 		panic("internal error")
 	}
-	packedState := uint64(time.Now().Unix()<<8) | uint64(state)
+	packedState := uint64(time.Now().Unix()<<8) | uint64(state) //nolint:gosec,mnd
 	c.curState.Store(packedState)
-	return
 }
 
 func (c *conn) handleConnection() {
@@ -97,7 +77,7 @@ func (c *conn) handleConnection() {
 	}
 
 	if err := scanner.Err(); err != nil {
-		fmt.Println("Error reading from connection:", err)
+		c.server.logger.Println("Error reading from connection:", err)
 	}
 }
 
@@ -122,6 +102,10 @@ func (c *conn) handleRequestWrapped(request string) string {
 }
 
 func (c *conn) handleRequest(request string) string {
+	const (
+		amountThreshold = 100
+		amountLarge     = 10000
+	)
 	parts := strings.Split(request, "|")
 	if len(parts) != 2 || parts[0] != "PAYMENT" {
 		return "RESPONSE|REJECTED|Invalid request"
@@ -132,10 +116,10 @@ func (c *conn) handleRequest(request string) string {
 		return "RESPONSE|REJECTED|Invalid amount"
 	}
 
-	if amount > 100 {
+	if amount > amountThreshold {
 		processingTime := amount
-		if amount > 10000 {
-			processingTime = 10000
+		if amount > amountLarge {
+			processingTime = amountLarge
 		}
 		time.Sleep(time.Duration(processingTime) * time.Millisecond)
 	}

@@ -3,18 +3,13 @@ run:
   timeout: 10m
   modules-download-mode: readonly
   allow-parallel-runners: false
-issues:
-  exclude-dirs:
-    - examples/
 linters:
   enable-all: true
   disable:
     # obsolete linters
     - depguard
-    - execinquery
     - exportloopref
     - gofumpt
-    - gomnd
     - nlreturn
     - wrapcheck
     - wsl
