@@ -3,6 +3,7 @@ package server
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -24,8 +25,7 @@ type SimulatorTestSuite struct {
 func (s *SimulatorTestSuite) SetupSuite() {
 	s.srv = New()
 	go func() {
-		err := s.srv.Start(ServerAddr, 3*time.Second)
-		if err != nil {
+		if err := s.srv.Start(ServerAddr, 3*time.Second); !errors.Is(err, ErrServerClosed) {
 			fmt.Println("Failed to start server:", err)
 			os.Exit(1)
 		}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"log"
 	"os"
@@ -28,7 +29,7 @@ func main() {
 
 	srv := server.New()
 	go func() {
-		if err := srv.Start(*listenAddr, *gracePeriod); err != nil {
+		if err := srv.Start(*listenAddr, *gracePeriod); !errors.Is(err, server.ErrServerClosed) {
 			log.Println("Error starting server:", err)
 			stop()
 		}

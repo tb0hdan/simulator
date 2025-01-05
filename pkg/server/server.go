@@ -148,6 +148,11 @@ func (s *Server) Start(bindAddr string, gracePeriod time.Duration) error {
 	// set grace period
 	s.gracePeriod = gracePeriod
 
+	if !s.trackListener(&listener, true) {
+		return ErrServerClosed
+	}
+	defer s.trackListener(&listener, false)
+
 	for {
 		rw, err := listener.Accept()
 		if err != nil {
