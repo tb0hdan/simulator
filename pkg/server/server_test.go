@@ -11,9 +11,10 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
+
+const ServerAddr = "localhost:8080"
 
 type SimulatorTestSuite struct {
 	suite.Suite
@@ -23,7 +24,7 @@ type SimulatorTestSuite struct {
 func (s *SimulatorTestSuite) SetupSuite() {
 	s.srv = New()
 	go func() {
-		err := s.srv.Start(":8080", 3*time.Second)
+		err := s.srv.Start(ServerAddr, 3*time.Second)
 		if err != nil {
 			fmt.Println("Failed to start server:", err)
 			os.Exit(1)
@@ -79,17 +80,17 @@ func (s *SimulatorTestSuite) TestSchemeSimulator() {
 
 	for _, tt := range tests {
 		s.T().Run(tt.name, func(t *testing.T) {
-			conn, err := net.Dial("tcp", ":8080")
-			require.NoError(t, err, "Failed to connect to server")
+			conn, err := net.Dial("tcp", ServerAddr)
+			assert.NoError(t, err, "Failed to connect to server")
 			defer conn.Close()
 
 			_, err = fmt.Fprintf(conn, tt.input+"\n")
-			require.NoError(t, err, "Failed to send request")
+			assert.NoError(t, err, "Failed to send request")
 
 			start := time.Now()
 
 			response, err := bufio.NewReader(conn).ReadString('\n')
-			require.NoError(t, err, "Failed to read response")
+			assert.NoError(t, err, "Failed to read response")
 			duration := time.Since(start)
 
 			response = strings.TrimSpace(response)
@@ -105,6 +106,25 @@ func (s *SimulatorTestSuite) TestSchemeSimulator() {
 			}
 		})
 	}
+}
+
+func (s *SimulatorTestSuite) TestShutdown() {
+	conn, err := net.Dial("tcp", ServerAddr)
+	assert.NoError(s.T(), err, "Failed to connect to server")
+	defer conn.Close()
+
+	go func() {
+		_, err = fmt.Fprintf(conn, "PAYMENT|20000\n")
+		assert.NoError(s.T(), err, "Failed to send request")
+	}()
+
+	err = s.srv.Shutdown(context.Background())
+
+	assert.NoError(s.T(), err, "Failed to shutdown server")
+	time.Sleep(10 * time.Second)
+	response, err := bufio.NewReader(conn).ReadString('\n')
+	assert.NoError(s.T(), err, "Failed to read response")
+	assert.Equal(s.T(), "RESPONSE|REJECTED|Cancelled", strings.TrimSpace(response), "Unexpected response")
 }
 
 func TestSimulatorTestSuite(t *testing.T) {
