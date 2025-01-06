@@ -24,6 +24,7 @@ type Server struct {
 	logger        *log.Logger
 }
 
+// closeListenersLocked closes all listeners in s.listeners.
 func (s *Server) closeListenersLocked() error {
 	var err error
 	for ln := range s.listeners {
@@ -34,6 +35,7 @@ func (s *Server) closeListenersLocked() error {
 	return err
 }
 
+// closeIdleConns closes the idle connections in s.activeConn.
 func (s *Server) closeIdleConns() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -58,6 +60,7 @@ func (s *Server) closeIdleConns() bool {
 	return quiescent
 }
 
+// Shutdown gracefully shuts down the server without interrupting any active connections.
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.inShutdown.Store(true)
 
@@ -94,6 +97,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 }
 
+// conn is an in-flight connection that is managed by the server.
 func (s *Server) newConn(rwc net.Conn) *conn {
 	return &conn{
 		server:   s,
@@ -102,6 +106,7 @@ func (s *Server) newConn(rwc net.Conn) *conn {
 	}
 }
 
+// trackListener adds or removes ln from s.listeners.
 func (s *Server) trackListener(listener *net.Listener, add bool) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -121,6 +126,7 @@ func (s *Server) trackListener(listener *net.Listener, add bool) bool {
 	return true
 }
 
+// trackConn adds or removes c from s.activeConn.
 func (s *Server) trackConn(connection *conn, add bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -134,10 +140,12 @@ func (s *Server) trackConn(connection *conn, add bool) {
 	}
 }
 
+// shuttingDown reports whether the server is in the process of shutting down.
 func (s *Server) shuttingDown() bool {
 	return s.inShutdown.Load()
 }
 
+// Start starts the server.
 func (s *Server) Start(bindAddr string, gracePeriod time.Duration) error {
 	listener, err := net.Listen("tcp", bindAddr)
 	if err != nil {
@@ -168,6 +176,7 @@ func (s *Server) Start(bindAddr string, gracePeriod time.Duration) error {
 	}
 }
 
+// New creates a new server.
 func New(logger *log.Logger) *Server {
 	return &Server{
 		mu:            sync.Mutex{},

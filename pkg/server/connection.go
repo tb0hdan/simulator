@@ -39,18 +39,19 @@ type conn struct {
 
 	// rwc is the underlying network connection.
 	// This is never wrapped by other types and is the value given out
-	// to CloseNotifier callers. It is usually of type *net.TCPConn or
-	// *tls.Conn.
+	// to CloseNotifier callers. It is usually of type *net.TCPConn.
 	rwc net.Conn
 
-	curState atomic.Uint64 // packed (unixtime<<8|uint8(ConnState))
+	curState atomic.Uint64
 }
 
+// getState returns the current state of the connection.
 func (c *conn) getState() (ConnState, int64) {
 	packedState := c.curState.Load()
 	return ConnState(packedState & 0xff), int64(packedState >> 8) //nolint:gosec,mnd
 }
 
+// setState changes the state of the connection.
 func (c *conn) setState(state ConnState) {
 	srv := c.server
 	switch state { //nolint:exhaustive
@@ -66,6 +67,7 @@ func (c *conn) setState(state ConnState) {
 	c.curState.Store(packedState)
 }
 
+// handleConnection - reads requests from the connection and processes them
 func (c *conn) handleConnection() {
 	defer c.setState(StateClosed)
 
@@ -81,6 +83,7 @@ func (c *conn) handleConnection() {
 	}
 }
 
+// handleRequestWrapped - wrapper for handleRequest to provide graceful shutdown
 func (c *conn) handleRequestWrapped(request string) string {
 	if !c.server.inShutdown.Load() {
 		return c.handleRequest(request)
@@ -95,12 +98,13 @@ func (c *conn) handleRequestWrapped(request string) string {
 	defer cancel()
 	select {
 	case <-ctx.Done():
-		return "RESPONSE|REJECTED|Cancelled"
+		return ResponseCancelled
 	case result := <-handleCh:
 		return result
 	}
 }
 
+// handleRequest - actual business logic
 func (c *conn) handleRequest(request string) string {
 	const (
 		amountThreshold = 100
@@ -108,12 +112,15 @@ func (c *conn) handleRequest(request string) string {
 	)
 	parts := strings.Split(request, "|")
 	if len(parts) != 2 || parts[0] != "PAYMENT" {
-		return "RESPONSE|REJECTED|Invalid request"
+		return ResponseInvalidRequest
 	}
 
 	amount, err := strconv.Atoi(parts[1])
 	if err != nil {
-		return "RESPONSE|REJECTED|Invalid amount"
+		return ResponseInvalidAmount
+	}
+	if amount <= 0 {
+		return ResponseInvalidAmount
 	}
 
 	if amount > amountThreshold {
@@ -124,5 +131,5 @@ func (c *conn) handleRequest(request string) string {
 		time.Sleep(time.Duration(processingTime) * time.Millisecond)
 	}
 
-	return "RESPONSE|ACCEPTED|Transaction processed"
+	return ResponseTransactionProcessed
 }

@@ -51,15 +51,57 @@ func (s *SimulatorTestSuite) TestSchemeSimulator() {
 		maxDuration    time.Duration
 	}{
 		{
+			name:           "Empty Request",
+			input:          "",
+			expectedOutput: ResponseInvalidRequest,
+			maxDuration:    10 * time.Millisecond,
+		},
+		{
+			name:           "Garbage Request",
+			input:          "qwerty",
+			expectedOutput: ResponseInvalidRequest,
+			maxDuration:    10 * time.Millisecond,
+		},
+		{
+			name:           "Zero Amount",
+			input:          "PAYMENT|0",
+			expectedOutput: ResponseInvalidAmount,
+			maxDuration:    10 * time.Millisecond,
+		},
+		{
+			name:           "Zero Amount Negative",
+			input:          "PAYMENT|-0",
+			expectedOutput: ResponseInvalidAmount,
+			maxDuration:    10 * time.Millisecond,
+		},
+		{
+			name:           "Zero Amount Float",
+			input:          "PAYMENT|0.0",
+			expectedOutput: ResponseInvalidAmount,
+			maxDuration:    10 * time.Millisecond,
+		},
+		{
+			name:           "Zero Amount Float Negative",
+			input:          "PAYMENT|-0.0",
+			expectedOutput: ResponseInvalidAmount,
+			maxDuration:    10 * time.Millisecond,
+		},
+		{
+			name:           "Float Amount",
+			input:          "PAYMENT|1.1",
+			expectedOutput: ResponseInvalidAmount,
+			maxDuration:    10 * time.Millisecond,
+		},
+		{
 			name:           "Valid Request",
 			input:          "PAYMENT|10",
-			expectedOutput: "RESPONSE|ACCEPTED|Transaction processed",
+			expectedOutput: ResponseTransactionProcessed,
 			maxDuration:    50 * time.Millisecond,
 		},
 		{
 			name:           "Valid Request with Delay",
 			input:          "PAYMENT|101",
-			expectedOutput: "RESPONSE|ACCEPTED|Transaction processed",
+			expectedOutput: ResponseTransactionProcessed,
 			minDuration:    101 * time.Millisecond,
 			maxDuration:    151 * time.Millisecond,
 		},
@@ -67,13 +109,13 @@ func (s *SimulatorTestSuite) TestSchemeSimulator() {
 		{
 			name:           "Invalid Request Format",
 			input:          "INVALID|100",
-			expectedOutput: "RESPONSE|REJECTED|Invalid request",
+			expectedOutput: ResponseInvalidRequest,
 			maxDuration:    10 * time.Millisecond,
 		},
 		{
 			name:           "Large Amount",
 			input:          "PAYMENT|20000",
-			expectedOutput: "RESPONSE|ACCEPTED|Transaction processed",
+			expectedOutput: ResponseTransactionProcessed,
 			minDuration:    10 * time.Second,
 			maxDuration:    10*time.Second + 50*time.Millisecond,
 		},
@@ -125,7 +167,7 @@ func (s *SimulatorTestSuite) TestShutdown() {
 	time.Sleep(10 * time.Second)
 	response, err := bufio.NewReader(conn).ReadString('\n')
 	assert.NoError(s.T(), err, "Failed to read response")
-	assert.Equal(s.T(), "RESPONSE|REJECTED|Cancelled", strings.TrimSpace(response), "Unexpected response")
+	assert.Equal(s.T(), ResponseCancelled, strings.TrimSpace(response), "Unexpected response")
 }
 
 func TestSimulatorTestSuite(t *testing.T) {
